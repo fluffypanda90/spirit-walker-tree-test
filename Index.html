@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Spirit Walker — Passive Tree Pathing</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0d0b07; }
+  button { cursor: pointer; }
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: #0d0b07; }
+  ::-webkit-scrollbar-thumb { background: #3a2c10; border-radius: 3px; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState } = React;
+
+const GOLD="#c9933a",GOLD_L="#e8b96a",GOLD_P="#f5dfa0",EMBER="#d9581a",
+      TEXT="#d4c49a",TEXT_M="#8a7a5a",BG="#0d0b07",BG_CARD="#161208",
+      BG_CARD2="#1c160a",BORDER="#3a2c10",GREEN="#7ecb7e",BLUE="#7aaeff",RED="#c94444";
+
+const NODES=[
+  {id:"start",x:14,y:14,label:"HUNTRESS\nSTART",type:"start",phase:0,desc:"Starting point on the right-side (Dex) portion of the tree. Natural access to Evasion, Projectile, and Life clusters.",color:GOLD_L,size:28},
+  {id:"life1",x:11,y:12,label:"Life",type:"small",phase:1,desc:"Phase 1 (Acts 1–2): Grab all life nodes within 2 steps of your path. Never skip free life.",color:GREEN,size:14},
+  {id:"life2",x:12.5,y:11,label:"Life",type:"small",phase:1,desc:"Phase 1: Second life cluster near start.",color:GREEN,size:14},
+  {id:"life3",x:10,y:13,label:"Life\nNotable",type:"notable",phase:1,desc:"Phase 1: First notable life node. Priority early — 40–50 flat life here.",color:GREEN,size:18},
+  {id:"proj1",x:9,y:11.5,label:"Proj\nDmg",type:"small",phase:1,desc:"Phase 1: Path toward projectile damage. Every node here scales Twister and Oil Barrage.",color:BLUE,size:14},
+  {id:"proj_cluster",x:7.5,y:10,label:"Projectile\nDamage",type:"notable",phase:1,desc:"Phase 1 Target: Core projectile damage cluster. First notable you want. Scales both Twister and Oil Barrage directly.",color:BLUE,size:20},
+  {id:"atk_spd1",x:9.5,y:8.5,label:"Atk\nSpeed",type:"small",phase:2,desc:"Phase 2 (Acts 2–3): Attack speed scaling. More attacks = more Stampede procs = more Wisps.",color:GOLD,size:14},
+  {id:"atk_spd_cluster",x:8,y:7.5,label:"Attack\nSpeed",type:"notable",phase:2,desc:"Phase 2 Target: Attack speed notable. Directly multiplies Stag spirit triggers and Wisps per map.",color:GOLD,size:20},
+  {id:"evasion1",x:11.5,y:9.5,label:"Evasion",type:"small",phase:2,desc:"Phase 2: Evasion node. Soaring Ground adds +30% Evasion on top.",color:GREEN,size:14},
+  {id:"evasion_cluster",x:12.5,y:8,label:"Evasion\nRating",type:"notable",phase:2,desc:"Phase 2 Target: Core evasion notable. Synergizes with Soaring Ground from Sacred Unity.",color:GREEN,size:20},
+  {id:"life_mid",x:10.5,y:9,label:"Life",type:"small",phase:2,desc:"Phase 2: Mid-tree life node between clusters. Always worth taking.",color:GREEN,size:14},
+  {id:"lightning1",x:6.5,y:8.5,label:"Lightning\nDmg",type:"small",phase:3,desc:"Phase 3 (Acts 3–4): Lightning scaling. Twister and Stag shockwaves both deal lightning.",color:"#aac8ff",size:14},
+  {id:"lightning_cluster",x:5,y:7.5,label:"Lightning\nDamage",type:"notable",phase:3,desc:"Phase 3 Target: Lightning damage notable. All skills deal lightning now — flat and % both apply.",color:"#aac8ff",size:20},
+  {id:"proj2",x:6,y:9.5,label:"Proj\nDmg",type:"small",phase:3,desc:"Phase 3: Second projectile node connecting attack speed to lightning clusters.",color:BLUE,size:14},
+  {id:"ele_pen",x:5,y:9,label:"Ele\nPen",type:"small",phase:3,desc:"Phase 3: Elemental penetration — grab if on your path. Reduces enemy elemental resistance.",color:"#aac8ff",size:14},
+  {id:"crit_chance",x:7,y:6.5,label:"Crit\nChance",type:"notable",phase:4,desc:"Phase 4 (Early Maps): Critical strike chance notable. Begin crit transition here.",color:GOLD,size:18},
+  {id:"jewel1",x:9,y:6.5,label:"Jewel\nSocket",type:"jewel",phase:4,desc:"Phase 4: First jewel socket. Flat lightning to attacks jewels are highest value for Twister.",color:GOLD_P,size:16},
+  {id:"jewel2",x:7,y:5,label:"Jewel\nSocket",type:"jewel",phase:4,desc:"Phase 4: Second jewel socket. Crit multi + projectile damage jewels.",color:GOLD_P,size:16},
+  {id:"crit_multi",x:5,y:6,label:"Crit\nMulti",type:"notable",phase:5,desc:"Endgame: Critical multiplier notable. Once crit chance is capped, multi is pure damage.",color:EMBER,size:20},
+  {id:"ele_pen_notable",x:4,y:8,label:"Ele\nPenetration",type:"notable",phase:5,desc:"Endgame: Elemental penetration notable. Punches through pinnacle boss resistances.",color:"#aac8ff",size:18},
+  {id:"jewel3",x:5,y:5,label:"Jewel\nSocket",type:"jewel",phase:5,desc:"Endgame: Third jewel socket. Watcher's Eye-equivalent jewels with aura bonuses.",color:GOLD_P,size:16},
+  {id:"life_end",x:11,y:7,label:"Life\nEnd",type:"small",phase:5,desc:"Endgame: Remaining life nodes near your path.",color:GREEN,size:14},
+];
+
+const EDGES=[
+  ["start","life1"],["start","life2"],["start","life3"],
+  ["life1","proj1"],["life2","proj1"],["life3","life_mid"],
+  ["proj1","proj_cluster"],["proj_cluster","atk_spd1"],["proj_cluster","proj2"],
+  ["atk_spd1","atk_spd_cluster"],["life_mid","evasion1"],["evasion1","evasion_cluster"],
+  ["life_mid","atk_spd1"],["atk_spd_cluster","crit_chance"],["atk_spd_cluster","lightning1"],
+  ["lightning1","lightning_cluster"],["proj2","lightning1"],["proj2","ele_pen"],
+  ["ele_pen","lightning_cluster"],["crit_chance","crit_multi"],["crit_chance","jewel1"],
+  ["crit_chance","jewel2"],["jewel2","crit_multi"],["crit_multi","jewel3"],
+  ["lightning_cluster","ele_pen_notable"],["evasion_cluster","jewel1"],["evasion_cluster","life_end"],
+];
+
+const PC=["#c9933a","#7ecb7e","#c9933a","#7aaeff","#aac8ff","#d9581a"];
+const PL=["Start","Acts 1–2","Acts 2–3","Acts 3–4","Early Maps","Endgame"];
+const GX=44;
+const nx=x=>x*GX+10, ny=y=>y*GX+10;
+
+function App(){
+  const [hovered,setHovered]=useState(null);
+  const [phase,setPhase]=useState(null);
+  const hov=hovered?NODES.find(n=>n.id===hovered):null;
+  const active=n=>phase===null||n.phase===0||n.phase<=phase;
+  const edgeOn=([a,b])=>{
+    const na=NODES.find(n=>n.id===a),nb=NODES.find(n=>n.id===b);
+    return na&&nb&&active(na)&&active(nb);
+  };
+
+  return (
+    <div style={{background:BG,minHeight:"100vh",fontFamily:"Georgia,serif",color:TEXT}}>
+
+      {/* Header */}
+      <div style={{background:BG_CARD2,borderBottom:`1px solid ${BORDER}`,padding:"14px 20px"}}>
+        <div style={{fontFamily:"sans-serif",fontSize:9,letterSpacing:3,color:EMBER,textTransform:"uppercase",marginBottom:3}}>
+          Path of Exile 2 · Patch 0.5 · Return of the Ancients
+        </div>
+        <div style={{fontFamily:"sans-serif",fontWeight:700,fontSize:20,color:GOLD_L}}>
+          Spirit Walker — Passive Tree Pathing
+        </div>
+        <div style={{fontFamily:"sans-serif",fontSize:9,color:TEXT_M,marginTop:2,letterSpacing:1}}>
+          HUNTRESS · TWISTER BUILD · PRIORITY SCHEMATIC (not 1:1 game layout)
+        </div>
+      </div>
+
+      {/* Phase buttons */}
+      <div style={{padding:"12px 16px 0",display:"flex",gap:6,flexWrap:"wrap"}}>
+        {[null,1,2,3,4,5].map(p=>(
+          <button key={p??'all'} onClick={()=>setPhase(p)}
+            style={{background:phase===p?(p===null?GOLD:PC[p]):BG_CARD2,
+                    color:phase===p?BG:TEXT,
+                    border:`1px solid ${phase===p?(p===null?GOLD:PC[p]):BORDER}`,
+                    borderRadius:3,padding:"5px 12px",fontFamily:"sans-serif",
+                    fontSize:10,fontWeight:700,letterSpacing:1,transition:"all 0.15s"}}>
+            {p===null?"ALL":PL[p]}
+          </button>
+        ))}
+      </div>
+
+      <div style={{display:"flex",padding:"12px 16px",gap:0,flexWrap:"wrap"}}>
+
+        {/* SVG */}
+        <div style={{flex:1,minWidth:320,overflowX:"auto"}}>
+          <svg width={700} height={680} style={{background:"#0a0804",borderRadius:6,border:`1px solid ${BORDER}`,display:"block"}}>
+            <defs>
+              <filter id="glow"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+              <filter id="glows"><feGaussianBlur stdDeviation="1.5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+              <pattern id="grid" width={GX} height={GX} patternUnits="userSpaceOnUse" x={10} y={10}>
+                <path d={`M ${GX} 0 L 0 0 0 ${GX}`} fill="none" stroke="#1a1408" strokeWidth="0.5"/>
+              </pattern>
+            </defs>
+            <rect width={700} height={680} fill="url(#grid)" opacity={0.7}/>
+            <ellipse cx={350} cy={-40} rx={320} ry={130} fill="#c9933a" opacity={0.04}/>
+
+            {/* Avoid zone */}
+            {phase===null&&(
+              <g opacity={0.55}>
+                <rect x={nx(1.2)} y={ny(8.8)} width={110} height={92} rx={4} fill="#1a0808" stroke={RED} strokeWidth={0.5} strokeDasharray="5,3"/>
+                <text x={nx(1.2)+55} y={ny(8.8)+18} textAnchor="middle" fill={RED} fontSize={8.5} fontFamily="sans-serif" fontWeight="700">⛔ AVOID</text>
+                <text x={nx(1.2)+55} y={ny(8.8)+33} textAnchor="middle" fill="#8a4444" fontSize={7.5} fontFamily="sans-serif">Minion Damage</text>
+                <text x={nx(1.2)+55} y={ny(8.8)+46} textAnchor="middle" fill="#8a4444" fontSize={7.5} fontFamily="sans-serif">Armour / ES</text>
+                <text x={nx(1.2)+55} y={ny(8.8)+61} textAnchor="middle" fill="#6a3434" fontSize={7} fontFamily="sans-serif">Does nothing</text>
+                <text x={nx(1.2)+55} y={ny(8.8)+72} textAnchor="middle" fill="#6a3434" fontSize={7} fontFamily="sans-serif">for Twister builds</text>
+              </g>
+            )}
+
+            {/* Edges */}
+            {EDGES.map(([a,b],i)=>{
+              const na=NODES.find(n=>n.id===a),nb=NODES.find(n=>n.id===b);
+              if(!na||!nb)return null;
+              const on=edgeOn([a,b]);
+              return <line key={i} x1={nx(na.x)} y1={ny(na.y)} x2={nx(nb.x)} y2={ny(nb.y)}
+                stroke={on?GOLD:BORDER} strokeWidth={on?2:0.5} opacity={on?0.65:0.12}
+                strokeDasharray={on?"none":"3,4"}/>;
+            })}
+
+            {/* Nodes */}
+            {NODES.map(n=>{
+              const ox=nx(n.x),oy=ny(n.y),on=active(n),isH=hovered===n.id;
+              const lines=n.label.split("\n");
+              const stroke=isH?"#fff":n.color;
+              const sw=isH?2.5:n.type==="notable"||n.type==="start"?1.8:1;
+              const hexPts=[0,1,2,3,4,5].map(i=>{
+                const a=(i*60-90)*Math.PI/180;
+                return `${ox+Math.cos(a)*n.size},${oy+Math.sin(a)*n.size}`;
+              }).join(" ");
+              return (
+                <g key={n.id} opacity={on?1:0.1} style={{cursor:"pointer"}}
+                  onMouseEnter={()=>setHovered(n.id)} onMouseLeave={()=>setHovered(null)}>
+                  {isH&&<circle cx={ox} cy={oy} r={n.size+12} fill={n.color} opacity={0.12} filter="url(#glow)"/>}
+                  {n.type==="notable"&&on&&<circle cx={ox} cy={oy} r={n.size+5} fill={n.color} opacity={0.08} filter="url(#glows)"/>}
+                  {n.type==="jewel"
+                    ?<polygon points={`${ox},${oy-n.size} ${ox+n.size},${oy} ${ox},${oy+n.size} ${ox-n.size},${oy}`} fill={BG_CARD} stroke={stroke} strokeWidth={sw}/>
+                    :n.type==="start"
+                    ?<polygon points={hexPts} fill="#2a1e08" stroke={stroke} strokeWidth={sw}/>
+                    :<circle cx={ox} cy={oy} r={n.size} fill={BG_CARD} stroke={stroke} strokeWidth={sw}/>
+                  }
+                  {lines.map((line,li)=>(
+                    <text key={li} x={ox} y={oy+(li-(lines.length-1)/2)*(n.size<16?7:8)+1}
+                      textAnchor="middle" dominantBaseline="middle"
+                      fill={isH?"#fff":n.color} fontSize={n.size<16?6:n.type==="start"?7:6.8}
+                      fontFamily="sans-serif" fontWeight="700">{line}</text>
+                  ))}
+                  {n.type==="notable"&&n.phase>0&&(
+                    <>
+                      <circle cx={ox+n.size-1} cy={oy-n.size+1} r={8} fill={PC[n.phase]}/>
+                      <text x={ox+n.size-1} y={oy-n.size+4.5} textAnchor="middle" fill={BG}
+                        fontSize={7} fontFamily="sans-serif" fontWeight="700">{n.phase}</text>
+                    </>
+                  )}
+                </g>
+              );
+            })}
+
+            {/* Phase legend */}
+            <g transform="translate(542,18)">
+              <rect width={144} height={136} rx={4} fill={BG_CARD2} stroke={BORDER} strokeWidth={0.5}/>
+              <text x={72} y={16} textAnchor="middle" fill={GOLD} fontSize={8.5} fontFamily="sans-serif" fontWeight="700">PHASE LEGEND</text>
+              {[1,2,3,4,5].map((p,i)=>(
+                <g key={p} transform={`translate(8,${26+i*21})`}>
+                  <circle cx={9} cy={6} r={8} fill={PC[p]}/>
+                  <text x={9} y={9.5} textAnchor="middle" fill={BG} fontSize={7.5} fontFamily="sans-serif" fontWeight="700">{p}</text>
+                  <text x={24} y={10} fill={TEXT} fontSize={8} fontFamily="sans-serif">{PL[p]}</text>
+                </g>
+              ))}
+            </g>
+
+            {/* Node legend */}
+            <g transform={`translate(18,590)`}>
+              <rect width={250} height={78} rx={4} fill={BG_CARD2} stroke={BORDER} strokeWidth={0.5}/>
+              <text x={125} y={15} textAnchor="middle" fill={GOLD} fontSize={8} fontFamily="sans-serif" fontWeight="700">NODE TYPES</text>
+              <circle cx={20} cy={34} r={12} fill={BG_CARD} stroke={TEXT_M} strokeWidth={0.8}/>
+              <text x={38} y={38} fill={TEXT_M} fontSize={8} fontFamily="sans-serif">Small (passthrough)</text>
+              <circle cx={20} cy={57} r={14} fill={BG_CARD} stroke={GOLD_L} strokeWidth={1.8}/>
+              <text x={38} y={61} fill={TEXT_M} fontSize={8} fontFamily="sans-serif">Notable (priority target)</text>
+              <polygon points="140,24 152,34 140,44 128,34" fill={BG_CARD} stroke={GOLD_P} strokeWidth={1}/>
+              <text x={158} y={38} fill={TEXT_M} fontSize={8} fontFamily="sans-serif">Jewel socket</text>
+            </g>
+          </svg>
+        </div>
+
+        {/* Sidebar */}
+        <div style={{width:248,minWidth:220,paddingLeft:12,display:"flex",flexDirection:"column",gap:10,marginTop:0}}>
+
+          {/* Node detail */}
+          <div style={{background:BG_CARD2,border:`1px solid ${hov?hov.color:BORDER}`,borderRadius:4,padding:14,minHeight:130,transition:"border-color 0.2s"}}>
+            {hov?(
+              <>
+                <div style={{fontFamily:"sans-serif",fontSize:8,letterSpacing:2,color:hov.color,textTransform:"uppercase",marginBottom:5}}>
+                  {hov.type==="notable"?"Notable Node":hov.type==="jewel"?"Jewel Socket":hov.type==="start"?"Start Position":"Passive Node"}
+                </div>
+                <div style={{fontFamily:"sans-serif",fontWeight:700,fontSize:15,color:hov.color,marginBottom:8}}>
+                  {hov.label.replace("\n"," ")}
+                </div>
+                <div style={{fontSize:13,lineHeight:1.65,color:TEXT}}>{hov.desc}</div>
+                {hov.phase>0&&(
+                  <div style={{marginTop:10,padding:"4px 8px",background:PC[hov.phase]+"22",border:`1px solid ${PC[hov.phase]}55`,borderRadius:3,fontFamily:"sans-serif",fontSize:10,color:PC[hov.phase]}}>
+                    Phase {hov.phase} · {PL[hov.phase]}
+                  </div>
+                )}
+              </>
+            ):(
+              <div style={{color:TEXT_M,fontSize:13,fontStyle:"italic",textAlign:"center",paddingTop:28}}>
+                Tap a node to see details
+              </div>
+            )}
+          </div>
+
+          {/* Checklist */}
+          <div style={{background:BG_CARD2,border:`1px solid ${BORDER}`,borderRadius:4,padding:14}}>
+            <div style={{fontFamily:"sans-serif",fontWeight:700,fontSize:10,letterSpacing:2,color:GOLD,textTransform:"uppercase",marginBottom:10}}>
+              Pathing Checklist
+            </div>
+            {[
+              {p:1,t:"Acts 1–2",c:GREEN,items:["Life nodes near start","→ Projectile Damage notable"]},
+              {p:2,t:"Acts 2–3",c:GOLD,items:["→ Attack Speed notable","→ Evasion Rating cluster"]},
+              {p:3,t:"Acts 3–4",c:BLUE,items:["→ Lightning Damage","→ Elemental Pen (if on path)"]},
+              {p:4,t:"Early Maps",c:"#aac8ff",items:["→ Crit Chance notable","→ Jewel sockets x2"]},
+              {p:5,t:"Endgame",c:EMBER,items:["→ Crit Multiplier","→ Ele Pen notable","→ 3rd jewel socket"]},
+            ].map(({p,t,c,items})=>(
+              <div key={p} style={{marginBottom:11,paddingBottom:11,borderBottom:`1px solid ${BORDER}`}}>
+                <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:4}}>
+                  <div style={{width:18,height:18,borderRadius:"50%",background:c,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                    <span style={{fontFamily:"sans-serif",fontSize:9,fontWeight:700,color:BG}}>{p}</span>
+                  </div>
+                  <span style={{fontFamily:"sans-serif",fontSize:11,fontWeight:700,color:c}}>{t}</span>
+                </div>
+                {items.map((item,i)=>(
+                  <div key={i} style={{fontFamily:"sans-serif",fontSize:10,color:TEXT,paddingLeft:25,lineHeight:1.8}}>{item}</div>
+                ))}
+              </div>
+            ))}
+          </div>
+
+          {/* Rules */}
+          <div style={{background:"#0d1a0d",border:`1px solid ${GREEN}44`,borderRadius:4,padding:12}}>
+            <div style={{fontFamily:"sans-serif",fontSize:9,fontWeight:700,letterSpacing:2,color:GREEN,textTransform:"uppercase",marginBottom:8}}>Key Rules</div>
+            {["Never skip life within 2 steps","Twister = Proj Dmg + Atk Speed","Minion nodes = zero value","Evasion + Soaring Ground stack","Sceptre swap = zoo endgame only"].map((r,i)=>(
+              <div key={i} style={{fontFamily:"sans-serif",fontSize:10,color:TEXT,display:"flex",gap:6,marginBottom:5,lineHeight:1.5}}>
+                <span style={{color:GREEN,flexShrink:0}}>◆</span>{r}
+              </div>
+            ))}
+          </div>
+
+          <div style={{fontFamily:"sans-serif",fontSize:9,color:TEXT_M,fontStyle:"italic",textAlign:"center",lineHeight:1.6}}>
+            Schematic only — use as priority guide,<br/>not 1:1 in-game navigation.
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
